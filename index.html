@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <!-- Hoja de estilos -->
+    <link rel="stylesheet" href="estilos.css">
+
+    <!-- JavaScript externos -->
+    <script src="jquery-3.3.1.js"></script>
+    <script src="d3-5.14.2.js"></script>
+
+    <!-- JavaScript -->
+    <script>
+        let dataset = {}        
+        $(() => {
+            const offline = false; // set to true to use local dataset - requires local dataset & a local server
+            const datasetUrl = offline ? 
+                "../Coronavirus-Spain-Dataset/DataSet.json" : 
+                "https://raw.githubusercontent.com/AlbertoCasasOrtiz/Coronavirus-Spain-Dataset/master/DataSet.json";
+            $.getJSON(datasetUrl, (d) => {
+                
+                dataset = d;
+
+                let regions = getRegions(d)
+                
+                console.log(regions)
+                $(".ccaa").append($("<option value='Todas'>Todas las CCAAs</option>"))
+
+                regions.forEach(r => $(".ccaa").append(
+                    $("<option value='" + r + "'>" + r + "</option>")));
+
+                $("#ccaa1").val("Madrid");
+                $("#ccaa2").val("Todas");
+
+                dataset.regionCounts = regions.map(r => { 
+                    return filterRegion(d, r) 
+                });
+                dataset.regionCounts.push(allRegions(d));
+
+                console.log(dataset)
+
+                $("select").change(e => update());
+                update();
+            })
+        });
+
+        function getRegions(d) {
+            return Object.keys(d.InformesDiarios[0].ComunidadesAutonomas);
+        }
+
+        // output: {name: "Madrid", values:
+        //    [{ date: Date Fri Jan 31 2020 00:00:00 GMT+0100 (Central European Standard Time), value: 0 }, ... ]}
+        function filterRegion(d, region) {
+            return {
+                name: region, values: d.InformesDiarios.map(i => {
+                    return {
+                        date: d3.timeParse("%Y-%m-%d")(i.Fecha),
+                        value: i.ComunidadesAutonomas[region].Casos
+                    }
+                })
+            };
+        }
+
+        function allRegions(d) {
+            return {
+                name: "Todas", values: d.InformesDiarios.map(i => {
+                    return {
+                        date: d3.timeParse("%Y-%m-%d")(i.Fecha),
+                        value: i.TotalCasos
+                    }
+                })
+            }
+        }
+
+        // input: values (for a region)
+        // output: same; skips 'days' days, and generates (d_i - d_(i-n))/ d_(i-n) as values
+        function calculateIncrementFactor(vs, days) {
+            return vs.map((d, i) => {
+                if (i < days || vs[i - days].value == 0) return null;
+                const prev = vs[i - days].value
+                const curr = vs[i].value
+                return { date: d.date, value: (curr - prev) / prev }
+            }).filter(o => o != null)
+        }
+
+        function update() {
+            let c1 = $("#ccaa1").val();
+            let c2 = $("#ccaa2").val();
+            let d = +$("#days").val();
+            console.log(c1, c2, d);
+            let d1 = calculateIncrementFactor(
+                dataset.regionCounts.find(rc => rc.name == c1).values, d);
+            let d2 = calculateIncrementFactor(
+                dataset.regionCounts.find(rc => rc.name == c2).values, d);
+            drawRegions(d1, d2);
+        }
+
+        // d is result of filterRegion: an array of {date:, value:} objects
+        function drawRegions(data, data2) {
+
+            $("#lineas").empty();
+
+            let allData = data.concat(data2);
+
+            let margin = { top: 10, right: 30, bottom: 50, left: 60 },
+                width = 800 - margin.left - margin.right,
+                height = 500 - margin.top - margin.bottom;
+
+            // append the svg object to the body of the page
+            let svg = d3.select("#lineas")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform",
+                    "translate(" + margin.left + "," + margin.top + ")");
+
+            // Add X axis --> it is a date format
+            let x = d3.scaleTime()
+                .domain(d3.extent(allData, function (d) { return d.date; }))
+                .range([0, width]);
+            svg.append("g")
+                .attr("transform", "translate(0," + height + ")")
+                .call(d3.axisBottom(x).ticks(20))
+                .selectAll("text")
+                .style("text-anchor", "end")
+                .attr("dx", "-.8em")
+                .attr("dy", ".15em")
+                .attr("transform", "rotate(-65)");
+
+            let y = d3.scaleSymlog()
+                .domain([
+                    Math.min(0, d3.min(allData, function(d) { return +d.value; })), 
+                    d3.max(allData, function(d) { return +d.value; })
+                ])
+                .constant(4)
+                .range([height, 0])
+
+            svg.append("g")
+                .call(d3.axisLeft(y).ticks(32, "1s"));
+
+            paint(data, d3.color("steelblue"))
+            paint(data2, d3.color("red"))
+
+            function paint(data, color) {
+                // Add the line
+                svg.append("path")
+                    .datum(data)
+                    .attr("fill", "none")
+                    .attr("stroke", color)
+                    .attr("stroke-width", 1.5)
+                    .attr("d", d3.line()
+                        .x(function (d) { return x(d.date) })
+                        .y(function (d) { return y(d.value) })
+                    )
+            }
+        }
+
+    </script>
+
+    <!-- Título de la ventana -->
+    <title>Evolución del factor de incremento del Coronavirus en España</title>
+</head>
+
+<body>
+    <h1>Evolución del factor de incremento</h1>
+    <p>Cada punto representa el factor (1 = 100%) de incremento en
+        <select id="days">
+            <option value="1">1 día</option>
+            <option value="2">2 días</option>
+            <option value="3">3 días</option>
+            <option value="4">4 días</option>
+            <option value="5">5 días</option>
+            <option value="6">6 días</option>
+            <option value="7" selected>1 semana</option>
+        </select> de los casos totales de covid-19 en
+        <select class="ccaa" id="ccaa1"></select> comparados con 
+        <select class="ccaa" id="ccaa2"></select>*
+    </p>
+
+    <div id="lineas"></div>
+
+    <p style="font-size: small;">
+        * según 
+        <a href="https://www.mscbs.gob.es/profesionales/saludPublica/ccayes/alertasActual/nCov-China/situacionActual.htm">datos
+        oficiales</a> recopilados 
+        <a href="https://github.com/AlbertoCasasOrtiz/Coronavirus-Spain-Dataset">en github</a> por Alberto Casas. 
+    <p>Web desarrollada por Manuel Freire, basada en ideas de JM Freire; y disponible como 
+        <a href="https://github.com/manuel-freire/exploradorCoronavirus">código abierto</a>.
+    </p>
+
+</body>
+
+</html>
