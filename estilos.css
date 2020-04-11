@@ -1,0 +1,23 @@
+.colorBox {
+    display: inline-block;
+    width: 1.2em;
+    height: 1.2em;
+    vertical-align: -0.1em;
+}
+
+div.tooltip {	
+    position: absolute;			
+    text-align: center;			
+    width: 90px;					
+    height: 28px;					
+    padding: 2px;				
+    font: 12px sans-serif;		
+    background: lightgray;	
+    border: 0px;		
+    border-radius: 8px;			
+    pointer-events: none;			
+}
+
+circle {
+    opacity: 20%;
+}
