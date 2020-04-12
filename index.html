@@ -7,227 +7,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 
     <!-- Hoja de estilos -->
-    <link rel="stylesheet" href="estilos.css">
-
-    <!-- JavaScript externos -->
-    <script src="jquery-3.3.1.js"></script>
-    <script src="d3-5.14.2.js"></script>
+    <link rel="stylesheet" href="styles.css">
 
     <!-- JavaScript -->
-    <script>
-        let dataset = {}        
-        const ccaa1Color = "steelblue";
-        const ccaa2Color = "red";
+    <script src="jquery-3.3.1.js"></script>
+    <script src="d3-5.14.2.js"></script>
+    <script src="script.js"></script>
 
-        $(() => {
-            const offline = false; // set to true to use local dataset - requires local dataset & a local server
-            const datasetUrl = offline ? 
-                "../Coronavirus-Spain-Dataset/DataSet.json" : 
-                "https://raw.githubusercontent.com/AlbertoCasasOrtiz/Coronavirus-Spain-Dataset/master/DataSet.json";
-            
-            $("#colorBox1").css("background-color", ccaa1Color);
-            $("#colorBox2").css("background-color", ccaa2Color);
-            
-            $.getJSON(datasetUrl, (d) => {
-                
-                dataset = d;
-
-                // identify regions
-                d.regions = Object.keys(d.InformesDiarios[0].ComunidadesAutonomas);               
-                console.log(d);
-                
-                // initialize region drop-down
-                $(".ccaa").append($("<option value='Todas'>Todas las CCAAs</option>"))
-                d.regions.forEach(r => $(".ccaa").append(
-                    $("<option value='" + r + "'>" + r + "</option>")));
-
-                // initialize other drop-downs
-                $("#yAxis").val("factor");
-                $("#ccaa1").val("Madrid");
-                $("#ccaa2").val("Todas");
-                $("#column").val("Casos");
-
-                // update last date in dataset
-                $("#ultimaFecha").text(d.InformesDiarios[d.InformesDiarios.length - 1].Fecha);
-
-                // listen to UI selections
-                $("select").change(e => update());
-
-                // and show currently-selected data
-                update();
-            })
-        });
-
-        // output: {name: "Madrid", values:
-        //    [{ date: Date Fri Jan 31 2020 00:00:00 GMT+0100 (Central European Standard Time), value: 0 }, ... ]}
-        function filterRegion(d, region, column) {
-            return {
-                name: region, values: d.InformesDiarios.map(i => {
-                    return {
-                        date: d3.timeParse("%Y-%m-%d")(i.Fecha),
-                        value: i.ComunidadesAutonomas[region][column]
-                    }
-                })
-            };
-        }
-
-        function allRegions(d, column) {
-            return {
-                name: "Todas", values: d.InformesDiarios.map(i => {
-                    return {
-                        date: d3.timeParse("%Y-%m-%d")(i.Fecha),
-                        value: i["Total" + column]
-                    }
-                })
-            }
-        }
-
-        // input: values (for a region)
-        // output: same; skips 'days' days, and generates (d_i - d_(i-n))/ d_(i-n) as values
-        function calculateIncrementFactor(vs, days) {
-            return vs.map((d, i) => {
-                if (i < days) return null;
-                const prev = vs[i - days].value
-                const curr = vs[i].value
-                
-                return Number.isFinite(prev) && prev != 0 &&  Number.isFinite(curr)?
-                    { date: d.date, value: (curr - prev) / prev } :
-                    null;
-            }).filter(o => o != null)
-        }
-
-        function update() {
-            let increments = ($("#yAxis").val() === "factor");
-            if (increments) {
-                $(".interval").show();
-            } else {
-                $(".interval").hide();
-            }
-
-            let c1 = $("#ccaa1").val();
-            let c2 = $("#ccaa2").val();
-            let days = +$("#days").val();
-            let col = $("#column").val();
-
-            dataset.regionCounts = [];
-            dataset.regionCounts = dataset.regions.map(r => { 
-                    return filterRegion(dataset, r, col) 
-                });
-            dataset.regionCounts.push(allRegions(dataset, col));
-            console.log(dataset.regionCounts)
-
-            console.log("Plotting data for ", c1, "vs", c2, "increments = ", increments, days, 
-                "using", ccaa1Color, ccaa2Color);
-            let d1 = dataset.regionCounts.find(rc => rc.name == c1).values;
-            let d2 = dataset.regionCounts.find(rc => rc.name == c2).values;
-            if (increments) {
-                d1 = calculateIncrementFactor(d1, days);
-                d2 = calculateIncrementFactor(d2, days);
-            }
-            drawRegions(d1, d2, ccaa1Color, ccaa2Color);
-        }
-
-        // d is result of filterRegion: an array of {date:, value:} objects
-        function drawRegions(data1, data2, color1, color2) {
-
-            $("#lineas").empty();
-
-            let allData = data1.concat(data2);
-
-            let margin = { top: 10, right: 30, bottom: 50, left: 60 },
-                width = 800 - margin.left - margin.right,
-                height = 500 - margin.top - margin.bottom;
-
-            // append the svg object to the body of the page
-            let svg = d3.select("#lineas")
-                .append("svg")
-                .attr("width", width + margin.left + margin.right)
-                .attr("height", height + margin.top + margin.bottom)
-                .append("g")
-                .attr("transform",
-                    "translate(" + margin.left + "," + margin.top + ")");
-
-            // Add X axis --> it is a date format
-            let x = d3.scaleTime()
-                .domain(d3.extent(allData, function (d) { return d.date; }))
-                .range([0, width]);
-            svg.append("g")
-                .attr("transform", "translate(0," + height + ")")
-                .call(d3.axisBottom(x).ticks(20))
-                .selectAll("text")
-                .style("text-anchor", "end")
-                .attr("dx", "-.8em")
-                .attr("dy", ".15em")
-                .attr("transform", "rotate(-65)");
-
-            let y = d3.scaleSymlog()
-                .domain([
-                    Math.min(0, d3.min(allData, function(d) { return +d.value; })), 
-                    d3.max(allData, function(d) { return +d.value; })
-                ])
-                .constant(4)
-                .range([height, 0])
-
-            svg.append("g")
-                .call(d3.axisLeft(y).ticks(32, "1s"));
-
-            paint(data1, d3.color(color1))
-            paint(data2, d3.color(color2))
-
-            // ready the tooltip div (see https://bl.ocks.org/d3noob/a22c42db65eb00d4e369)
-            let div = d3.select("body").append("div")	
-                .attr("class", "tooltip")				
-                .style("opacity", 0);
-
-            // paints 1 line & prepares its tooltips
-            function paint(data, color) {
-                // Add the line
-                svg.append("path")
-                    .datum(data)
-                    .attr("fill", "none")
-                    .attr("stroke", color)
-                    .attr("stroke-width", 1.5)
-                    .attr("d", d3.line()
-                        .x(function (d) { return x(d.date) })
-                        .y(function (d) { return y(d.value) })
-                    )
-
-                // Add the points & bind tooltips
-                svg.selectAll("dot")	
-                    .data(data)			
-                .enter().append("circle")								
-                    .attr("r", 4)		
-                    .attr("cx", function(d) { return x(d.date); })		 
-                    .attr("cy", function(d) { return y(d.value); })		
-                    .on("mouseover", function(d) {		
-                        div.transition()		
-                            .duration(200)		
-                            .style("opacity", .9);		
-                        div	.html(
-                                d.date.toISOString().substring(5, 10) + "<br/>" + 
-                                Number.parseFloat(d.value).toFixed(3))	
-                            .style("left", (d3.event.pageX) + "px")		
-                            .style("top", (d3.event.pageY - 28) + "px")	
-                        })					
-                    .on("mouseout", function(d) {		
-                        div.transition()		
-                            .duration(500)		
-                            .style("opacity", 0);	
-                    });
-            }
-        }
     </script>
 
-    <!-- Título de la ventana -->
-    <title>Evolución del factor de incremento del Coronavirus en España</title>
+    <title>Seguimiento de Coronavirus</title>
 </head>
 
 <body>
-    <h1>Evolución del factor de incremento</h1>
+    <h1>Explorador de informes de seguimiento del Coronavirus en España</h1>
+
     <p>La línea refleja el 
         <select id="yAxis">
             <option value="factor">factor</option>
             <option value="valor">valor de</option>
+            <option value="per1k">valor por cada 1000 habitantes de</option>
         </select>
         <span class="interval">(1 = 100%) de incremento en</span>
         <select id="days" class="interval">
@@ -255,21 +54,26 @@
         </select>
         covid-19 en
         <span id="colorBox1" class="colorBox"></span>
+        <!-- filled in via JS -->
         <select class="ccaa" id="ccaa1"></select> 
         comparados con 
         <span id="colorBox2" class="colorBox"></span>
+        <!-- filled in via JS -->
         <select class="ccaa" id="ccaa2"></select>*
     </p>
 
+    <!-- visualization goes here -->
     <div id="lineas"></div>
 
-    <p style="font-size: small;">
+    <p class="footer">
         * según 
         <a href="https://www.mscbs.gob.es/profesionales/saludPublica/ccayes/alertasActual/nCov-China/situacionActual.htm">datos
         oficiales</a> recopilados 
         <a href="https://github.com/AlbertoCasasOrtiz/Coronavirus-Spain-Dataset">en github</a> por Alberto Casas 
         (<a href="www.albertocasasortiz.com">www.albertocasasortiz.com</a>). Última fecha disponible: <span id="ultimaFecha">???</span>.
-    <p>Web desarrollada por Manuel Freire, basada en ideas de JM Freire; y disponible como 
+    </p>
+    <p class="footer">
+        Web desarrollada por Manuel Freire, basada en ideas de JM Freire; y disponible como 
         <a href="https://github.com/manuel-freire/exploradorCoronavirus">código abierto</a>.
     </p>
 
